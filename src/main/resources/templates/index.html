@@ -1,0 +1,347 @@
+<!DOCTYPE HTML>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<html>
+
+<head>
+    <link rel="stylesheet" type="text/css" href="guacamole.css"/>
+    <title>Guacamole (EXAMPLE)</title>
+</head>
+
+<body style="margin: 0">
+
+<!-- Display -->
+<div id="display" style="width:100%;height:100%;"></div>
+
+<input type="file" id="file-input">
+
+<!-- Guacamole JavaScript API -->
+<script type="text/javascript"
+        src="guacamole-common-js/all.js"></script>
+
+<!-- Init -->
+<script type="text/javascript"> /* <![CDATA[ */
+
+// Get display div from document
+var display = document.getElementById("display");
+
+// Instantiate client, using an HTTP tunnel for communications.
+
+var tunnel;
+
+if (window.WebSocket) {
+    tunnel = new Guacamole.ChainedTunnel(
+        new Guacamole.WebSocketTunnel('websocket-tunnel'),
+        new Guacamole.HTTPTunnel('tunnel')
+    );
+} else {
+    tunnel = new Guacamole.HTTPTunnel("tunnel")
+}
+
+var guac = new Guacamole.Client(tunnel);
+
+// Add client to display div
+display.appendChild(guac.getDisplay().getElement());
+
+// Error handler
+guac.onerror = function (error) {
+    alert(error);
+};
+
+var pixel_density = window.devicePixelRatio || 1;
+var optimal_dpi = pixel_density * 96;
+var optimal_width = window.innerWidth * pixel_density;
+var optimal_height = window.innerHeight * pixel_density;
+
+var connectString = "token=root&"
+                    + "GUAC_WIDTH=" + Math.floor(optimal_width)
+                    + "&GUAC_HEIGHT=" + Math.floor(optimal_height)
+                    + "&GUAC_DPI=" + Math.floor(optimal_dpi);
+
+/*var guacAudio = Guacamole.AudioPlayer.getSupportedTypes();
+var guacVideo = Guacamole.VideoPlayer.getSupportedTypes();
+
+// Add audio mimetypes to connect string
+guacAudio.supported.forEach(function(mimetype) {
+    connectString += "&GUAC_AUDIO=" + encodeURIComponent(mimetype);
+});
+
+// Add video mimetypes to connect string
+guacVideo.supported.forEach(function(mimetype) {
+    connectString += "&GUAC_VIDEO=" + encodeURIComponent(mimetype);
+});*/
+
+// Connect
+guac.connect(connectString);
+
+setTimeout(function () {
+    //guac.sendSize(document.body.clientWidth, document.body.clientHeight);
+    //guac.getDisplay().resize(guac.getDisplay().getDefaultLayer(), document.body.clientWidth, document.body.clientHeight);
+
+    var fileOutStream = guac.createFileStream('text/plain', 'one.log');
+    var writer = new Guacamole.StringWriter(fileOutStream);
+    writer.onack = function (status) {
+        console.log(status)
+    };
+    console.log('test write file......text');
+    writer.sendText('hello my text');
+    writer.sendEnd();
+}, 2000);
+
+console.log(guac.getDisplay().getScale());
+guac.getDisplay().scale(0.95);
+
+// Disconnect on close
+window.onunload = function () {
+    guac.disconnect();
+};
+
+// Mouse
+var mouse = new Guacamole.Mouse(guac.getDisplay().getElement());
+
+mouse.onmousedown =
+    mouse.onmouseup =
+        mouse.onmousemove = function (mouseState) {
+            // guac.sendMouseState(mouseState);
+            sendScaledMouseState(mouseState);
+        };
+
+// Keyboard
+var keyboard = new Guacamole.Keyboard(document);
+
+keyboard.onkeydown = function (keysym) {
+    guac.sendKeyEvent(1, keysym);
+};
+
+keyboard.onkeyup = function (keysym) {
+    guac.sendKeyEvent(0, keysym);
+};
+
+guac.onfile = function (stream, mimetype, filename) {
+    //通知服务端，已经收到了stream
+    stream.sendAck('OK', Guacamole.Status.Code.SUCCESS);
+    //开始处理输入流，这里封装了一个downloadFile方法
+    downloadFile(stream, mimetype, filename);
+};
+
+function sendScaledMouseState(mouseState) {
+
+    // Scale event by current scale
+    var scaledState = new Guacamole.Mouse.State(
+        mouseState.x / guac.getDisplay().getScale(),
+        mouseState.y / guac.getDisplay().getScale(),
+        mouseState.left,
+        mouseState.middle,
+        mouseState.right,
+        mouseState.up,
+        mouseState.down);
+
+    // Send mouse event
+    guac.sendMouseState(scaledState);
+
+};
+
+function downloadFile(stream, mimetype, filename) {
+    //拿到的流不能直接使用，先实例化一个处理器，使用blob reader处理数据
+    var blob_builder;
+    if (window.BlobBuilder) {
+        blob_builder = new BlobBuilder();
+    } else if (window.WebKitBlobBuilder) {
+        blob_builder = new WebKitBlobBuilder();
+    } else if (window.MozBlobBuilder) {
+        blob_builder = new MozBlobBuilder();
+    } else {
+        blob_builder = new (function () {
+
+            var blobs = [];
+
+            /** @ignore */
+            this.append = function (data) {
+                blobs.push(new Blob([data], {"type": mimetype}));
+            };
+
+            /** @ignore */
+            this.getBlob = function () {
+                return new Blob(blobs, {"type": mimetype});
+            };
+
+        })();
+    }
+
+    // Append received blobs
+    stream.onblob = function (data) {
+
+        // Convert to ArrayBuffer
+        var binary = window.atob(data);
+        var arrayBuffer = new ArrayBuffer(binary.length);
+        var bufferView = new Uint8Array(arrayBuffer);
+
+        for (var i = 0; i < binary.length; i++) {
+            bufferView[i] = binary.charCodeAt(i);
+        }
+
+        //收到后就交给blob_builder
+        blob_builder.append(arrayBuffer);
+        length += arrayBuffer.byteLength;
+
+        // Send success response
+        stream.sendAck("OK", 0x0000);
+
+    };
+
+    stream.onend = function () {
+        //结束的时候，获取blob_builder里面的可用数据
+        var blob_data = blob_builder.getBlob();
+
+        //数据传输完成后进行下载等处理
+        if (mimetype.indexOf('stream-index+json') != -1) {
+            //如果是文件夹,使用filereader读取blob数据，可以获得该文件夹下的文件和目录的名称和类型，是一个json形式
+            var blob_reader = new FileReader();
+            blob_reader.addEventListener("loadend", function () {
+                var folder_content = JSON.parse(blob_reader.result)
+                //重新组织当前文件目录，appendFileItem是自己封装的文件系统动态展示
+                //appendFileItem(folder_content)
+                //$("#header_title").text(filename);
+            });
+            blob_reader.readAsBinaryString(blob_data);
+        } else {
+            //如果是文件，直接下载，但是需要解决个问题，就是如何下载blob数据
+            //借鉴了https://github.com/eligrey/FileSaver.js这个库
+            var file_arr = filename.split("/");
+            var download_file_name = file_arr[file_arr.length - 1];
+            saveAs(blob_data, download_file_name);
+        }
+    }
+}
+
+function saveAs(blob_data, download_file_name) {
+    var a = document.createElement('a');
+    var url = window.URL.createObjectURL(blob_data);
+    var filename = download_file_name;
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+var fileSystem;
+
+guac.onfilesystem = function(object) {
+    fileSystem = object;
+};
+
+var input = document.getElementById('file-input');
+input.onchange = function() {
+    var file = input.files[0];
+    //上传开始
+    uploadFile(fileSystem, file);
+};
+
+
+function uploadFile (object, file) {
+    var _this      = this;
+    var fileUpload = {};
+
+    //需要读取文件内容，使用filereader
+    var reader     = new FileReader();
+
+    var current_path = 'test';  //上传到堡垒机的目录，可以自己动态获取
+    var STREAM_BLOB_SIZE = 4096;
+    reader.onloadend = function fileContentsLoaded() {
+        //上面源码分析过，这里先创建一个连接服务端的数据通道
+        console.log(current_path + '/' + file.name);
+        var stream = guac.createOutputStream(file.type, file.name);
+        var bytes  = new Uint8Array(reader.result);
+
+        var offset   = 0;
+        var progress = 0;
+
+        fileUpload.name     = file.name;
+        fileUpload.mimetype = file.type;
+        fileUpload.length   = bytes.length;
+
+        stream.onack = function ackReceived(status) {
+            if (status.isError()) {
+                //提示错误信息
+                //layer.msg(status.message);
+                return false;
+            }
+
+            var slice  = bytes.subarray(offset, offset + STREAM_BLOB_SIZE);
+            var base64 = bufferToBase64(slice);
+
+            // Write packet
+            stream.sendBlob(base64);
+
+            // Advance to next packet
+            offset += STREAM_BLOB_SIZE;
+
+            if (offset >= bytes.length) {
+                stream.sendEnd();
+            }
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+
+    return fileUpload;
+};
+
+function bufferToBase64(buf) {
+    var binstr = Array.prototype.map.call(buf, function (ch) {
+        return String.fromCharCode(ch);
+    }).join('');
+    return btoa(binstr);
+}
+
+function fullScreen() {
+    /*判断是否全屏*/
+    var isFullscreen = document.fullScreenElement//W3C
+                       || document.msFullscreenElement //IE11
+                       || document.mozFullScreenElement //火狐
+                       || document.webkitFullscreenElement //谷歌
+                       || false;
+    if (!isFullscreen) {
+        var el = document.documentElement;
+        if (el.requestFullscreen) {
+            el.requestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+            el.mozRequestFullScreen();
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        } else if (el.msRequestFullscreen) {
+            el.msRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.webkitCancelFullScreen) {
+            document.webkitCancelFullScreen();
+        }
+    }
+}
+
+/* ]]> */
+</script>
+</body>
+</html>
