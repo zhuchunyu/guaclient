@@ -29,7 +29,7 @@
 <!-- Display -->
 <div id="display" style="width:100%;height:100%;"></div>
 
-<input type="file" id="file-input">
+<!--<input type="file" id="file-input">-->
 
 <!-- Guacamole JavaScript API -->
 <script type="text/javascript"
@@ -246,12 +246,12 @@ guac.onfilesystem = function(object) {
     fileSystem = object;
 };
 
-var input = document.getElementById('file-input');
+/*var input = document.getElementById('file-input');
 input.onchange = function() {
     var file = input.files[0];
     //上传开始
     uploadFile(fileSystem, file);
-};
+};*/
 
 
 function uploadFile (object, file) {

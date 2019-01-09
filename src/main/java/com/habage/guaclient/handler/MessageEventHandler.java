@@ -47,8 +47,8 @@ import java.util.concurrent.TimeUnit;
 public class MessageEventHandler {
 
     private static final String USER = "root";
-    private static final String PASSWORD = "123456";
-    private static final String HOST = "192.168.136.132";
+    private static final String PASSWORD = "1q2w3e4r";
+    private static final String HOST = "10.69.0.155";
     private static final int DEFAULT_SSH_PORT = 22;
     private static final int SSH_BUUFER_SIZE = 4096;
 

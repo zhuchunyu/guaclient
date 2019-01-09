@@ -15,6 +15,11 @@ public class GuacdController {
         return "index";
     }
 
+    @RequestMapping("/ssh")
+    public String ssh() {
+        return "client";
+    }
+
     @RequestMapping("/socket")
     public String web() {
         return "websocket";
